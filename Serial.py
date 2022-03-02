@@ -1,3 +1,5 @@
+import time
+
 import serial
 import Globla
 import logging
@@ -28,11 +30,14 @@ def DWritePort(ser, data):                #写
     result = ser.write(data)  # 写数据
     return result
 
-def Serial():
+def serial():
     #DOpenPort()
     while Globla.run:
         #DReadPort()
         #DWritePort()
-        print("运行中")
+        Globla.mutex.acquire()
+        print(time.time())
+        Globla.mutex.release()
+        time.sleep(1)
     #DColsePort()
     print("已结束")

@@ -1,10 +1,20 @@
 import threading
-import SerialThread
-import DetectThread
+import Serial
+import Detect
+
+mutex = threading.Lock()
+
+class DetectThread(threading.Thread):
+    def run(self):
+        Detect.detectmine()
+
+class SerialThread(threading.Thread):
+    def run(self):
+        Serial.serial()
 
 if __name__ == "__main__":
-    dt = threading.Thread(target=DetectThread.Detect,args=())
-    sr = threading.Thread(target=SerialThread.Serial,args=())
+    dt = DetectThread()
+    sr = SerialThread()
     dt.start()
     sr.start()
     dt.join()
