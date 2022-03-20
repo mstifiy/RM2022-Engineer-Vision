@@ -25,3 +25,5 @@ def detectmine():
             type = 0
         elif ch == ord('2'):
             type =1
+        elif ch == ord('3'):
+            Globla.GET_DIS_ON = not Globla.GET_DIS_ON

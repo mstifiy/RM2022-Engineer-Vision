@@ -2,6 +2,8 @@ import copy
 
 import cv2
 import numpy as np
+import math
+import Globla
 from enum import Enum
 
 
@@ -17,7 +19,8 @@ class mine():
     upper = np.array([180, 255, 255])
     def detect_mine(self, src, type,fps):
         hsv = cv2.cvtColor(src, cv2.COLOR_BGR2HSV)
-        ROI_mask = np.zeros((src.shape[0], src.shape[1], 3), np.float32)
+        ROI_mask = copy.deepcopy(np.zeros((src.shape[0], src.shape[1], 3), np.float32))
+        binary = np.zeros((src.shape[0], src.shape[1], 3), np.float32)
         if (type == 0):                         #银矿石
             lower = np.array([0, 0, 221]) #0 0 221
             upper = np.array([128, 30, 255]) #128 30 255
@@ -29,7 +32,8 @@ class mine():
             #             dst[r, c] = src[r, c]
             #             print("src:"+str(src[r,c])+" dst:"+str(dst[r,c]))
             # dst = cv2.cvtColor(dst, cv2.COLOR_BGR2GRAY)
-            #binary = cv2.threshold(mask, 40, 255, cv2.THRESH_BINARY)
+            dst = cv2.bitwise_and(src, src, mask=mask)
+            #flag = self.find_sign(binary, src)
             #self.remove_spot(binary,dst)
             contours, hierarchy = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
             stone_area = 0
@@ -52,44 +56,106 @@ class mine():
             contours, hierarchy = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
             stone_area = 0
             index = 0
-            for i in contours:
-                contour_area = cv2.contourArea(i)
+            for i in range(0, len(contours)):
+                contour_area = cv2.contourArea(contours[i])
                 if contour_area > stone_area:
                     stone_area = contour_area
                     index = i
             if stone_area > 1000:
-                self.stone_rect = cv2.boundingRect(index)
-                ROI_mask = cv2.bitwise_and(src, src, mask=mask)
-            cv2.drawContours(src, contours, -1, (0, 0, 255))
+                self.stone_rect = cv2.boundingRect(contours[index])
+                dst = copy.deepcopy(cv2.bitwise_and(src, src, mask=mask))
+                dst = cv2.cvtColor(dst, cv2.COLOR_BGR2GRAY)
+                ret, binary = cv2.threshold(dst, 40, 255, cv2.THRESH_BINARY)
+                flag = self.find_sign(mask, src)
+                cv2.imshow("dst", dst)
+                x, y, w, h = self.stone_rect
+                ROI_mask = binary[y:y+h, x:x+w]
+                #ROI_mask = copy.deepcopy(binary[y:y+h, x:x+w])
+                cv2.drawContours(src, contours, index, (255, 0, 0), -1)
+                # ROI_stone = binary(self.stone_rect)
+                # cv2.bitwise_xor(ROI_stone,ROI_mask,ROI_stone)
+
+                #flag = self.find_sign(mask, src)
+
+            #cv2.drawContours(src, contours, -1, (0, 0, 255), 2)
+            if Globla.GET_DIS_ON:
+                self.dis_midline(src, contours)
             cv2.imshow("ROI", ROI_mask)
-        cv2.imshow("mask", mask)
+        #cv2.imshow("mask", mask)
         cv2.putText(src, fps, (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 0), 2)
         cv2.imshow("frame", src)
         pass
-    def dis_midline(self,src):
-        pass
+
+    def dis_midline(self,src, contours):
+        for i in contours:
+            rect = cv2.minAreaRect(i)
+            box = cv2.boxPoints(rect)
+            box = np.int0(box)
+            dx = box[1][0] - box[0][0]
+            dy = box[1][1] - box[0][1]
+            if dx != 0:
+                angle = math.atan(dy / dx)
+            else:
+                angle = 0
+            if angle >= -0.52359877559829887307710723054658 and angle <= 0.52359877559829887307710723054658:
+                cv2.drawContours(src, [box], 0, (0, 255, 0), 2)
+                left = src.shape[1]
+                mid = np.int0(src.shape[1] / 2)
+                #cv2.line(src, (mid, 0), (mid , src.shape[0]), (128, 37, 180))      #中线
+                right = 0
+                for j in box:
+                    if j[0] > right:
+                        right = j[0]
+                    if j[0] < left:
+                        left = j[0]
+                dmid = (left + right) / 2
+                dmid = np.int0(dmid)
+                cv2.line(src, (dmid, 0), (dmid, src.shape[1]), (90, 60, 68), 2)
+                return (mid - (dmid))
+
+
+
     def find_sign(self,ROI_stone,src):
+        print("find_sign is run")
         sign_l = 0
         sign_r = 0
         sign_fulldark = 0
-        contours,hierarchy=cv2.findContours(ROI_stone, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+        contours, hierarchy = cv2.findContours(ROI_stone, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
         for i in contours:
             if cv2.contourArea(i) < 1000:
+                print("pass")
                 continue
             rects = cv2.boundingRect(i)
-            if ((rects.height / rects.width) < 0.8) | ((rects.height / rects.width) > 1.2):
+            [x, y, w, h] = rects
+            print(rects)
+            if ((h / w) < 0.8) | ((h / w) > 1.2):
                 continue
-            s = self.detect_dot(ROI_stone(rects))
+            s = self.detect_dot(copy.deepcopy(ROI_stone[y:y+h, x:x+w]))
+            print("s="+str(s))
+            self.sign_l = (0, 0, 0, 0)
+            self.sign_r = (0, 0, 0, 0)
             if s == 0:
-                self.sign_l = cv2.Rect(rects.tl() + self.stone_rect.tl(), rects.br()+self.stone_rect.tl())
-                sign_l +=1
+                x = rects.tl().x + self.stone_rect.tl().x
+                y = rects.tl().y + self.stone_rect.tl().y
+                w = rects.br().x+self.stone_rect.tl().x - x
+                h = rects.br().y+self.stone_rect.tl().y - y
+                self.sign_l = (x, y, w, h)
+                sign_l += 1
                 cv2.rectangle(src, rects.tl() + self.stone_rect.tl(), rects.br() + self.stone_rect.tl(), (0, 0, 255), 2)
             elif s == 1:
-                self.sign_r = cv2.Rect(rects.tl() + self.stone_rect.tl(), rects.br() + self.stone_rect.tl())
+                x = rects.tl().x + self.stone_rect.tl().x
+                y = rects.tl().y + self.stone_rect.tl().y
+                w = rects.br().x + self.stone_rect.tl().x - x
+                h = rects.br().y + self.stone_rect.tl().y - y
+                self.sign_r = (x, y, w, h)
                 sign_r += 1
                 cv2.rectangle(src, rects.tl() + self.stone_rect.tl(), rects.br() + self.stone_rect.tl(), (0, 0, 255), 2)
             elif s == 2:
-                self.sign_fulldark = cv2.Rect(rects.tl() + self.stone_rect.tl(), rects.br() + self.stone_rect.tl())
+                x = rects.tl().x + self.stone_rect.tl().x
+                y = rects.tl().y + self.stone_rect.tl().y
+                w = rects.br().x + self.stone_rect.tl().x - x
+                h = rects.br().y + self.stone_rect.tl().y - y
+                self.sign_fulldark = (x, y, w, h)
                 sign_fulldark += 1
                 cv2.rectangle(src, rects.tl() + self.stone_rect.tl(), rects.br() + self.stone_rect.tl(), (0, 0, 255), 2)
             if sign_fulldark > 0:
@@ -105,9 +171,14 @@ class mine():
                         print("180 clockwise")
                         self.sign_l = self.sign_fulldark
                         sign_l = 1
-            if ((self.sign_l.br().x + self.sign_l.tl().x) / 2) < ((self.sign_r.br().x + self.sign_r.tl().x) / 2):
-                self.center_x = ((self.sign_l.br().x + self.sign_l.tl().x) / 2 + (self.sign_r.br().x + self.sign_r.tl().x) / 2) / 2
-                cv2.line(src, cv2.Point)
+        slbrx = self.sign_l[0]+self.sign_l[2]
+        sltlx = self.sign_l[0]
+        srbrx = self.sign_r[0]+self.sign_r[2]
+        srtlx = self.sign_r[0]
+        if ((slbrx + sltlx) / 2) < ((srbrx + srtlx) / 2):
+                self.center_x = ((slbrx + sltlx) / 2 + (srbrx + srtlx) / 2) / 2
+                print("found!")
+                cv2.line(src, cv2.Point,(0,255,255),2)
     def find_code(self,src):
         pass
     def get_position(self,src):
@@ -115,31 +186,39 @@ class mine():
     def detect_dot(self, ROI):
         otherarea = 0
         sign_area = 0
-        for i in range(0,ROI.rows):
-            for j in range(0,ROI.cows):
-                if ROI[i,j] ==0:
-                    otherarea+=1
+        #print("0:"+str(ROI.shape[0]) + " 1:" + str(ROI.shape[1]))
+        for i in range(0, ROI.shape[0]):
+            for j in range(0, ROI.shape[1]):
+                if ROI[i, j] == 0:
+                    otherarea += 1
                 else:
-                    sign_area+=1
-        rate = sign_area / ROI.cols / ROI.rows
+                    sign_area += 1
+        rate = sign_area / ROI.shape[1] / ROI.shape[0]
         if (rate > 0.4) & (rate < 0.65):
             left_area = 0
             right_area = 0
             darkl_area = 0
             darkr_area = 0
-            for i in range(0, ROI.rows):
-                for j in range(0, ROI.cows):
-                    if ROI[i,j] == 0:
-                        left_area+=1
-                    elif i > ROI.rows/2 & j > ROI.cols / 2:
-                        if ROI[i,j] == 0:
-                            right_area+=1
-                    if i < ROI.rows / 3 | j < ROI.cols / 3:
-                        if ROI[i,j] ==255:
-                            darkl_area+=1
-                    if i < ROI.rows / 3 | j > ROI.cols *2 / 3:
-                        if ROI[i,j] == 255:
-                            darkr_area+=1
+            for i in range(0, ROI.shape[0]):
+                for j in range(0, ROI.shape[1]):
+                    if ROI[i, j] == 0:
+                        left_area += 1
+                    elif i > ROI.shape[0] /2 & j > ROI.shape[1] / 2:
+                        if ROI[i, j] == 0:
+                            right_area += 1
+                    if i < ROI.shape[0] / 3 | j < ROI.shape[1] / 3:
+                        if ROI[i, j] == 255:
+                            darkl_area += 1
+                    if i < ROI.shape[0] / 3 | j > ROI.shape[1] *2 / 3:
+                        if ROI[i, j] == 255:
+                            darkr_area += 1
+            if (left_area * 4 / ROI.shape[1] / ROI.shape[0] > 0.9) & (darkr_area / (ROI.shape[1] * ROI.shape[0] * 5 / 9) > 0.7):
+                return 1
+            elif (right_area * 4 / ROI.shape[1] / ROI.shape[0] > 0.9) & (darkl_area / (ROI.shape[1] * ROI.shape[0] * 5 / 9) > 0.7):
+                return 0
+        elif sign_area / ROI.shape[1] / ROI.shape[0] > 1:
+            return 2
+        return 4
     def remove_spot(self,src, dst):
         pass
         # dst = src.clone()
