@@ -36,7 +36,7 @@ def serial():
         #DReadPort()
         #DWritePort()
         Globla.mutex.acquire()
-        print(time.time())
+        #print(time.time())
         Globla.mutex.release()
         time.sleep(1)
     #DColsePort()
